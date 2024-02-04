@@ -1,5 +1,5 @@
 [package]
-name = "bq34z100_rust"
+name = "bq34z100"
 description = "Provides an embedded_hal driver for the fuel gauge series bq34z100"
 version = "0.1.0"
 edition = "2021"

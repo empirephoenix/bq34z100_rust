@@ -1,4 +1,4 @@
-# bq34z100_rust
+# bq34z100
 Provides an embedded_hal driver for the fuel gauge series bq34z100 (cannot change chemid)
 
 Currently requires a STD env due to math functions, improvements or noSTD workarounds welcome!
