@@ -1,3 +1,5 @@
+#![no_main]
+
 use embedded_hal::{delay::DelayNs, i2c::I2c};
 
 const BQ34Z100_G1_ADDRESS: u8 = 0x55;
@@ -26,7 +28,6 @@ fn xemics_to_double(x: u32) -> f32 {
 
     // Get the exponent, it's 2^(MSbyte - 0x80)
     f_exponent = 2.0_f32.powf(((v_msbyte as i16) - 128) as f32);
-    println!("f_exponent {}", f_exponent);
     // Or in 0x80 to the MidHiByte
     v_mid_hi_byte = (v_mid_hi_byte | 128) as u8;
     // get value out of midhi byte
@@ -87,8 +88,9 @@ fn float_to_xemics(mut x: f32) -> u32 {
 
 #[derive(Debug)]
 pub enum Bq34Z100Error<E> {
-    NotStored,
+    NotStored { error: &'static str },
     I2C { error: E },
+    XemicsConversionError,
 }
 
 impl<E> From<E> for Bq34Z100Error<E> {
@@ -97,7 +99,7 @@ impl<E> From<E> for Bq34Z100Error<E> {
     }
 }
 
-impl<I2C, DELAY, E: std::fmt::Debug> Bq34z100g1<E> for Bq34z100g1Driver<I2C, DELAY>
+impl<I2C, DELAY, E> Bq34z100g1<E> for Bq34z100g1Driver<I2C, DELAY>
 where
     I2C: I2c<Error = E>,
     DELAY: DelayNs,
@@ -129,14 +131,12 @@ where
     }
 
     fn read_flash_block(&mut self, sub_class: u8, offset: u8) -> Result<(), Bq34Z100Error<E>> {
-        println!("Prepare reading block {}", sub_class);
         self.write_reg(0x61, 0x00)?; // Block control
         self.write_reg(0x3e, sub_class)?; // Flash class
         self.write_reg(0x3f, offset / 32)?; // Flash block
 
         let data: [u8; 1] = [0x40];
         self.i2c.write(BQ34Z100_G1_ADDRESS, &data)?;
-        println!("Reading block {} now", sub_class);
         self.i2c
             .read(BQ34Z100_G1_ADDRESS, &mut self.flash_block_data)?;
         return Ok(());
@@ -145,11 +145,6 @@ where
     fn write_reg(&mut self, address: u8, value: u8) -> Result<(), Bq34Z100Error<E>> {
         let data: [u8; 2] = [address, value];
         self.i2c.write(BQ34Z100_G1_ADDRESS, &data)?;
-
-        println!(
-            "Writing register block {:#04x} with value {}",
-            address, value
-        );
         return Ok(());
     }
 
@@ -172,7 +167,6 @@ where
     }
 
     fn unsealed(&mut self) -> Result<(), Bq34Z100Error<E>> {
-        println!("Unsealing");
         let data: [u8; 3] = [0x00, 0x14, 0x04];
         self.i2c.write(BQ34Z100_G1_ADDRESS, &data)?;
 
@@ -182,11 +176,9 @@ where
     }
 
     fn enter_calibration(&mut self) -> Result<(), Bq34Z100Error<E>> {
-        println!("enter_calibration");
         self.unsealed()?;
         loop {
             self.cal_enable()?;
-            println!("Enable cal");
             self.enter_cal()?;
             self.delay.delay_ms(1000);
             if self.control_status()? & 0x1000 > 0 {
@@ -227,11 +219,6 @@ where
         self.flash_block_data[11] = (capacity >> 8) as u8; // Design Capacity
         self.flash_block_data[12] = (capacity & 0xff) as u8;
 
-        println!(
-            "Block 11 {} block 12 {}",
-            self.flash_block_data[11], self.flash_block_data[12]
-        );
-
         for i in 6..=9 {
             self.write_reg(0x40 + i, self.flash_block_data[i as usize])?;
         }
@@ -242,8 +229,6 @@ where
 
         let checksum = self.flash_block_checksum()?;
         self.write_reg(0x60, checksum)?;
-
-        println!("Checksum {}", checksum);
 
         self.delay.delay_ms(150);
         self.reset()?;
@@ -259,20 +244,19 @@ where
         updated_capacity |= self.flash_block_data[12] as i16;
 
         if self.flash_block_data[6] != 0 || self.flash_block_data[7] != 0 {
-            println!("Block 6 or 7 wrong");
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Block 6 or 7 wrong",
+            });
         }
-        println!(
-            "Expected capacity {} updated threshold {}",
-            capacity, updated_capacity
-        );
         if capacity as i32 != updated_cc_threshold as i32 {
-            println!("cc threshold wrong");
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "cc threshold wrong",
+            });
         }
         if capacity as i32 != updated_capacity as i32 {
-            println!("capacity wrong");
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "capacity wrong",
+            });
         }
         return Ok(());
     }
@@ -303,7 +287,9 @@ where
         updated_q_max |= self.flash_block_data[1] as i16;
 
         if capacity != updated_q_max {
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Qmax not updated"
+            });
         }
         return Ok(());
     }
@@ -341,12 +327,16 @@ where
         updated_energy |= self.flash_block_data[14] as i16;
 
         if energy != updated_energy {
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Energy not updated"
+            });
         }
 
         let updated_energy_scale: u8 = self.flash_block_data[30];
         if updated_energy_scale != energy_scale {
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Energy scale not updated"
+            });
         }
 
         return Ok(());
@@ -396,7 +386,9 @@ where
             || t2_t3 as u16 != updated_t2_t3
             || t3_t4 as u16 != updated_t3_t4
         {
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Charge parameters not updated"
+            });
         }
         return Ok(());
     }
@@ -418,8 +410,9 @@ where
         self.read_flash_block(64, 0)?;
 
         if self.flash_block_data[4] != led_config {
-            println!("Failed to set led config!");
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Failed to set led config!",
+            });
         }
         return Ok(());
     }
@@ -446,7 +439,9 @@ where
         self.read_flash_block(64, 0)?;
 
         if cells != self.flash_block_data[7] {
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Series cells not updated"
+            });
         }
         return Ok(());
     }
@@ -478,7 +473,9 @@ where
         let mut updated_config = (self.flash_block_data[0] as u16) << 8;
         updated_config |= self.flash_block_data[1] as u16;
         if config != updated_config {
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Config flags not updated"
+            });
         }
         return Ok(());
     }
@@ -559,60 +556,44 @@ where
         updated_fc_clear = (self.flash_block_data[10] & 0xff) as i8;
 
         if taper_current != updated_taper_current {
-            println!(
-                "Could not update taper current expected {} actual {}",
-                taper_current, updated_taper_current
-            );
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Could not update taper current",
+            });
         }
         if min_taper_capacity != updated_min_taper_capacity {
-            println!(
-                "Could not update min_taper_capacity expected {} actual {}",
-                min_taper_capacity, updated_min_taper_capacity
-            );
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Could not update min_taper_capacity",
+            });
         }
         if cell_taper_voltage != updated_cell_taper_voltage {
-            println!(
-                "Could not update cell_taper_voltage expected {} actual {}",
-                cell_taper_voltage, updated_cell_taper_voltage
-            );
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Could not update cell_taper_voltage",
+            });
         }
         if taper_window != updated_taper_window {
-            println!(
-                "Could not update taper_window expected {} actual {}",
-                taper_window, updated_taper_window
-            );
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Could not update taper_window",
+            });
         }
         if tca_set != updated_tca_set {
-            println!(
-                "Could not update tca_set expected {} actual {}",
-                tca_set, updated_tca_set
-            );
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Could not update tca_set",
+            });
         }
         if tca_clear != updated_tca_clear {
-            println!(
-                "Could not update tca_clear expected {} actual {}",
-                tca_clear, updated_tca_clear
-            );
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Could not update tca_clear",
+            });
         }
         if fc_set != updated_fc_set {
-            println!(
-                "Could not update fc_set expected {} actual {}",
-                fc_set, updated_fc_set
-            );
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Could not update fc_set",
+            });
         }
         if fc_clear != updated_fc_clear {
-            println!(
-                "Could not update fc_clear expected {} actual {}",
-                fc_clear, updated_fc_clear
-            );
-            return Err(Bq34Z100Error::NotStored);
+            return Err(Bq34Z100Error::NotStored {
+                error: "Could not update fc_clear",
+            });
         }
         return Ok(());
     }
@@ -621,7 +602,6 @@ where
         self.enter_calibration()?;
 
         loop {
-            println!("Loop cc offset");
             self.cc_offset()?;
             self.delay.delay_ms(1000);
             if self.control_status()? & 0x0800 > 0 {
@@ -668,7 +648,6 @@ where
         for i in 0..50 {
             volt_array[i] = self.voltage()? as f32;
             self.delay.delay_ms(150);
-            println!("Reading voltage {} as {}", i, volt_array[i]);
         }
         let mut volt_mean: f32 = 0.0;
         for i in 0..50 {
@@ -697,8 +676,6 @@ where
         let new_voltage_divider: u16 =
             ((applied_voltage as f32 / volt_mean as f32) * current_voltage_divider as f32) as u16;
 
-        println!("Setting new voltage divider to {}", new_voltage_divider);
-
         self.flash_block_data[14] = (new_voltage_divider >> 8) as u8;
         self.flash_block_data[15] = (new_voltage_divider & 0xff) as u8;
 
@@ -716,7 +693,6 @@ where
         let mut current_array: [f32; 50] = [0.0; 50];
         for i in 0..50 {
             current_array[i] = self.current()? as f32;
-            println!("Reading current {} @ {}", current_array[i], i);
             self.delay.delay_ms(150);
         }
         let mut current_mean: f32 = 0.0;
@@ -749,20 +725,12 @@ where
         let xemics_cc_gain = float_to_xemics(float_cc_gain);
         let float_cc_gain2 = xemics_to_double(xemics_cc_gain);
         if (float_cc_gain - float_cc_gain2).abs() > 0.01 {
-            println!("Error converting old gain!!");
+            return Err(Bq34Z100Error::XemicsConversionError);
         }
 
         let gain_resistence: f32 = 4.768 / float_cc_gain;
-        println!(
-            "Current gain R is {}  xemics is {}",
-            gain_resistence, cc_gain
-        );
 
         let temp: f32 = (current_mean * gain_resistence) / applied_current as f32;
-        println!(
-            "Current is {} , applied current ist {}, new gain is {}",
-            current_mean, applied_current, temp
-        );
 
         let mut new_cc_gain: u32 = float_to_xemics(4.768 / temp);
         self.flash_block_data[0] = (new_cc_gain >> 24) as u8;
