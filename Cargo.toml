@@ -7,6 +7,10 @@ license = "BSD-3-Clause-No-Military-License"
 repository = "https://github.com/empirephoenix/bq34z100_rust"
 keywords = ["battery", "fuel gauge", "bq34z100", "embedded-hal-driver"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+include = [
+    "**/*.rs",
+    "Cargo.toml",
+]
 
 [dependencies]
 embedded-hal = "1.0.0"
