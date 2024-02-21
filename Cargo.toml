@@ -1,7 +1,7 @@
 [package]
 name = "bq34z100"
 description = "Provides an embedded_hal driver for the fuel gauge series bq34z100"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "BSD-3-Clause-No-Military-License"
 repository = "https://github.com/empirephoenix/bq34z100_rust"
