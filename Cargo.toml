@@ -1,7 +1,7 @@
 [package]
 name = "bq34z100"
 description = "Provides an embedded_hal driver for the fuel gauge series bq34z100"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "BSD-3-Clause-No-Military-License"
 repository = "https://github.com/empirephoenix/bq34z100_rust"
@@ -12,6 +12,11 @@ include = [
     "**/*.rs",
     "Cargo.toml",
 ]
+
+[features]
+# requires std due to xemics float conversion, only activate this if you plan to write to the bq34 config registers. Recommend instead using a ev2400 programmer and bqstudio
+write = ["std"]
+std = []
 
 [dependencies]
 embedded-hal = "1.0.0"

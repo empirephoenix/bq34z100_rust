@@ -1,4 +1,6 @@
 #![no_main]
+#[cfg(feature = "std")]
+extern crate std;
 
 use embedded_hal::{delay::DelayNs, i2c::I2c};
 
@@ -12,7 +14,7 @@ const BQ34Z100_G1_ADDRESS: u8 = 0x55;
 //  directly ported from
 //  https://github.com/xkam1x/BQ34Z100G1/blob/master/bq34z100g1.cpp by Kamran Ahmad on 08/05/2019.
 //  Xemics conversion from https://github.com/Ralim/BQ34Z100/blob/master/bq34z100.cpp
-
+#[cfg(feature = "write")]
 fn xemics_to_double(x: u32) -> f32 {
     let mut b_is_positive = false;
     let f_exponent: f32;
@@ -48,6 +50,7 @@ fn xemics_to_double(x: u32) -> f32 {
     }
 }
 
+#[cfg(feature = "write")]
 fn float_to_xemics(mut x: f32) -> u32 {
     let mut b_negative = false;
 
@@ -130,6 +133,7 @@ where
         return self.read_2_register_as_u16(0x2a);
     }
 
+    #[cfg(feature = "write")]
     fn read_flash_block(&mut self, sub_class: u8, offset: u8) -> Result<(), Bq34Z100Error<E>> {
         self.write_reg(0x61, 0x00)?; // Block control
         self.write_reg(0x3e, sub_class)?; // Flash class
@@ -142,12 +146,14 @@ where
         return Ok(());
     }
 
+    #[cfg(feature = "write")]
     fn write_reg(&mut self, address: u8, value: u8) -> Result<(), Bq34Z100Error<E>> {
         let data: [u8; 2] = [address, value];
         self.i2c.write(BQ34Z100_G1_ADDRESS, &data)?;
         return Ok(());
     }
 
+    #[cfg(feature = "write")]
     fn write_flash_block(&mut self, sub_class: u8, offset: u8) -> Result<(), Bq34Z100Error<E>> {
         self.write_reg(0x61, 0x00)?; // Block control
         self.write_reg(0x3e, sub_class)?; // Flash class
@@ -158,6 +164,7 @@ where
         return Ok(());
     }
 
+    #[cfg(feature = "write")]
     fn flash_block_checksum(&mut self) -> Result<u8, Bq34Z100Error<E>> {
         let mut temp: u8 = 0;
         for i in self.flash_block_data.iter() {
@@ -175,6 +182,7 @@ where
         return Ok(());
     }
 
+    #[cfg(feature = "write")]
     fn enter_calibration(&mut self) -> Result<(), Bq34Z100Error<E>> {
         self.unsealed()?;
         loop {
@@ -188,6 +196,7 @@ where
         return Ok(());
     }
 
+    #[cfg(feature = "write")]
     fn exit_calibration(&mut self) -> Result<(), Bq34Z100Error<E>> {
         loop {
             self.exit_cal()?;
@@ -206,6 +215,7 @@ where
      * If you are using a lipo li-ion battery this should be the only one you use. Since you cannot change the chemid with this driver,
      * and need to use the BatteryManager desktop application anyway, I strongly recommend to set all other config there as well.
      */
+    #[cfg(feature = "write")]
     fn update_design_capacity(&mut self, capacity: u16) -> Result<(), Bq34Z100Error<E>> {
         self.unsealed()?;
         self.read_flash_block(48, 0)?;
@@ -261,6 +271,7 @@ where
         return Ok(());
     }
 
+    #[cfg(feature = "write")]
     fn update_q_max(&mut self, capacity: i16) -> Result<(), Bq34Z100Error<E>> {
         self.unsealed()?;
         self.read_flash_block(82, 0)?;
@@ -298,6 +309,7 @@ where
      * If you are using a lipo li-ion battery this should be the only one you use. Since you cannot change the chemid with this driver,
      * and need to use the BatteryManager desktop application anyway, I strongly recommend to set all other config there as well.
      */
+    #[cfg(feature = "write")]
     fn update_design_energy(
         &mut self,
         energy: i16,
@@ -342,6 +354,7 @@ where
         return Ok(());
     }
 
+    #[cfg(feature = "write")]
     fn update_cell_charge_voltage_range(
         &mut self,
         t1_t2: u16,
@@ -393,6 +406,8 @@ where
         return Ok(());
     }
 
+    #[cfg(feature = "write")]
+    //Warning, only for stock firmware, newer firmeware changed register
     fn set_led_mode(&mut self, led_config: u8) -> Result<(), Bq34Z100Error<E>> {
         self.unsealed()?;
         self.read_flash_block(64, 0)?;
@@ -421,6 +436,7 @@ where
      * If you are using a lipo li-ion battery this should be the only one you use. Since you cannot change the chemid with this driver,
      * and need to use the BatteryManager desktop application anyway, I strongly recommend to set all other config there as well.
      */
+    #[cfg(feature = "write")]
     fn update_number_of_series_cells(&mut self, cells: u8) -> Result<(), Bq34Z100Error<E>> {
         self.unsealed()?;
         self.read_flash_block(64, 0)?;
@@ -450,6 +466,7 @@ where
      * If you are using a lipo li-ion battery this should be the only one you use. Since you cannot change the chemid with this driver,
      * and need to use the BatteryManager desktop application anyway, I strongly recommend to set all other config there as well.
      */
+    #[cfg(feature = "write")]
     fn update_pack_configuration(&mut self, config: u16) -> Result<(), Bq34Z100Error<E>> {
         self.unsealed()?;
         self.read_flash_block(64, 0)?;
@@ -481,6 +498,7 @@ where
     }
 
     //Not recommended to use this
+    #[cfg(feature = "write")]
     fn update_charge_termination_parameters(
         &mut self,
         taper_current: i16,
@@ -598,6 +616,7 @@ where
         return Ok(());
     }
 
+    #[cfg(feature = "write")]
     fn calibrate_cc_offset(&mut self) -> Result<(), Bq34Z100Error<E>> {
         self.enter_calibration()?;
 
@@ -621,6 +640,7 @@ where
         return Ok(());
     }
 
+    #[cfg(feature = "write")]
     fn calibrate_board_offset(&mut self) -> Result<(), Bq34Z100Error<E>> {
         self.enter_calibration()?;
         loop {
@@ -643,6 +663,7 @@ where
         return Ok(());
     }
 
+    #[cfg(feature = "write")]
     fn calibrate_voltage_divider(&mut self, applied_voltage: f32) -> Result<(), Bq34Z100Error<E>> {
         let mut volt_array: [f32; 50] = [0.0; 50];
         for i in 0..50 {
@@ -689,6 +710,7 @@ where
         return Ok(());
     }
 
+    #[cfg(feature = "write")]
     fn calibrate_sense_resistor(&mut self, applied_current: i16) -> Result<(), Bq34Z100Error<E>> {
         let mut current_array: [f32; 50] = [0.0; 50];
         for i in 0..50 {
@@ -760,10 +782,7 @@ where
         return Ok(());
     }
 
-    fn set_current_deadband(&mut self, deadband: u8) -> Result<(), Bq34Z100Error<E>> {
-        let _ = deadband;
-        todo!()
-    }
+
 
     fn ready(&mut self) -> Result<(), Bq34Z100Error<E>> {
         self.unsealed()?;
@@ -832,22 +851,23 @@ where
         return self.read_control(0x21, 0x00);
     }
 
+    #[cfg(feature = "write")]
     fn cal_enable(&mut self) -> Result<u16, Bq34Z100Error<E>> {
         return self.read_control(0x2d, 0x00);
     }
-
+    #[cfg(feature = "write")]
     fn reset(&mut self) -> Result<u16, Bq34Z100Error<E>> {
         return self.read_control(0x41, 0x00);
     }
-
+    #[cfg(feature = "write")]
     fn exit_cal(&mut self) -> Result<u16, Bq34Z100Error<E>> {
         return self.read_control(0x80, 0x00);
     }
-
+    #[cfg(feature = "write")]
     fn enter_cal(&mut self) -> Result<u16, Bq34Z100Error<E>> {
         return self.read_control(0x81, 0x00);
     }
-
+    #[cfg(feature = "write")]
     fn offset_cal(&mut self) -> Result<u16, Bq34Z100Error<E>> {
         return self.read_control(0x82, 0x00);
     }
@@ -1015,27 +1035,38 @@ pub trait Bq34z100g1<E> {
     fn read_2_register_as_u16(&mut self, address: u8) -> Result<u16, Bq34Z100Error<E>>;
     fn read_1_register_as_u8(&mut self, address: u8) -> Result<u8, Bq34Z100Error<E>>;
     fn read_control(&mut self, address_lsb: u8, address_msb: u8) -> Result<u16, Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn read_flash_block(&mut self, sub_class: u8, offset: u8) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn write_reg(&mut self, address: u8, value: u8) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn write_flash_block(&mut self, sub_class: u8, offset: u8) -> Result<(), Bq34Z100Error<E>>;
-
+    #[cfg(feature = "write")]
     fn flash_block_checksum(&mut self) -> Result<u8, Bq34Z100Error<E>>;
 
     fn unsealed(&mut self) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn enter_calibration(&mut self) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn exit_calibration(&mut self) -> Result<(), Bq34Z100Error<E>>;
-
+    #[cfg(feature = "write")]
     fn update_design_capacity(&mut self, capacity: u16) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn update_q_max(&mut self, capacity: i16) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn update_design_energy(&mut self, energy: i16, scale: u8) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn update_cell_charge_voltage_range(
         &mut self,
         t1_t2: u16,
         t2_t3: u16,
         t3_t4: u16,
     ) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn update_number_of_series_cells(&mut self, cells: u8) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn update_pack_configuration(&mut self, config: u16) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn update_charge_termination_parameters(
         &mut self,
         taper_current: i16,
@@ -1047,11 +1078,14 @@ pub trait Bq34z100g1<E> {
         fc_set: i8,
         fc_clear: i8,
     ) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn calibrate_cc_offset(&mut self) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn calibrate_board_offset(&mut self) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn calibrate_voltage_divider(&mut self, applied_voltage: f32) -> Result<(), Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn calibrate_sense_resistor(&mut self, applied_current: i16) -> Result<(), Bq34Z100Error<E>>;
-    fn set_current_deadband(&mut self, deadband: u8) -> Result<(), Bq34Z100Error<E>>;
     fn ready(&mut self) -> Result<(), Bq34Z100Error<E>>;
 
     fn control_status(&mut self) -> Result<u16, Bq34Z100Error<E>>;
@@ -1069,10 +1103,15 @@ pub trait Bq34z100g1<E> {
     fn static_chem_chksum(&mut self) -> Result<u16, Bq34Z100Error<E>>;
     fn sealed(&mut self) -> Result<u16, Bq34Z100Error<E>>;
     fn it_enable(&mut self) -> Result<u16, Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn cal_enable(&mut self) -> Result<u16, Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn reset(&mut self) -> Result<u16, Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn exit_cal(&mut self) -> Result<u16, Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn enter_cal(&mut self) -> Result<u16, Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn offset_cal(&mut self) -> Result<u16, Bq34Z100Error<E>>;
 
     fn state_of_charge(&mut self) -> Result<u8, Bq34Z100Error<E>>; // 0 to 100%
@@ -1110,6 +1149,7 @@ pub trait Bq34z100g1<E> {
     fn dod_0(&mut self) -> Result<u16, Bq34Z100Error<E>>;
     fn q_max_dod_0(&mut self) -> Result<u16, Bq34Z100Error<E>>;
     fn q_max_time(&mut self) -> Result<u16, Bq34Z100Error<E>>;
+    #[cfg(feature = "write")]
     fn set_led_mode(&mut self, led_config: u8) -> Result<(), Bq34Z100Error<E>>;
     fn get_flags_decoded(&mut self) -> Result<Flags, Bq34Z100Error<E>>;
 }
