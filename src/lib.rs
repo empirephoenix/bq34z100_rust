@@ -91,9 +91,22 @@ fn float_to_xemics(mut x: f32) -> u32 {
 
 #[derive(Debug)]
 pub enum Bq34Z100Error<E> {
-    NotStored { error: &'static str },
-    I2C { error: E },
+    NotStored {
+        error: &'static str,
+    },
+    I2C {
+        error: E,
+    },
     XemicsConversionError,
+    #[cfg(feature = "flashstream")]
+    FlashStreamError {
+        error: std::io::Error,
+    },
+    ChecksumError {
+        register: u8,
+        expected: u8,
+        actual: u8
+    },
 }
 
 impl<E> From<E> for Bq34Z100Error<E> {
@@ -102,11 +115,78 @@ impl<E> From<E> for Bq34Z100Error<E> {
     }
 }
 
-impl<I2C, DELAY, E> Bq34z100g1<E> for Bq34z100g1Driver<I2C, DELAY>
+impl<I2C, DELAY, E: std::fmt::Debug> Bq34z100g1<E> for Bq34z100g1Driver<I2C, DELAY>
 where
     I2C: I2c<Error = E>,
     DELAY: DelayNs,
 {
+    #[cfg(feature = "flashstream")]
+    fn write_flash_stream_i2c(&mut self, line: &str, dryrun: bool) -> Result<(), Bq34Z100Error<E>> {
+        use std::num::ParseIntError;
+
+        let map_parse_err = |e: ParseIntError| {
+            let mapped: Bq34Z100Error<E> = Bq34Z100Error::FlashStreamError {
+                error: std::io::Error::new(std::io::ErrorKind::UnexpectedEof, e),
+            };
+            return mapped;
+        };
+        let missing_part = || Bq34Z100Error::FlashStreamError {
+            error: std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Line ended"),
+        };
+        if line.starts_with(";") {
+            return Ok(());
+        }
+        if line.contains("%") {
+            let error: Bq34Z100Error<E> = Bq34Z100Error::FlashStreamError {
+                error: std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Dynamic addreses are not supported"),
+            };
+            return Err(error);
+        }
+        let mut parts = line.split_ascii_whitespace();
+        let start = parts.next().unwrap();
+        if start.eq("W:") {
+            let address_string = parts.next().ok_or(missing_part())?;
+            let address = u8::from_str_radix(address_string, 16).map_err(map_parse_err)?;
+            let register_string = parts.next().ok_or(missing_part())?;
+            let mut register = u8::from_str_radix(register_string, 16).map_err(map_parse_err)?;
+            for value in parts {
+                let value = u8::from_str_radix(value, 16).map_err(map_parse_err)?;
+                let data: [u8; 2] = [register, value];
+                if !dryrun {
+                    self.i2c.write(address >> 1, &data).unwrap();
+                }
+                register += 1;
+            }
+        } else if start.eq("X:") {
+            let wait_for_string = parts.next().ok_or(missing_part())?;
+            let wait_for = u32::from_str_radix(wait_for_string, 16).map_err(map_parse_err)?;
+            if !dryrun {
+                self.delay.delay_ms(wait_for);
+            }
+        } else if start.eq("C:") {
+            let address_string = parts.next().ok_or(missing_part())?;
+            let address = u8::from_str_radix(address_string, 16).map_err(map_parse_err)?;
+            let register_string = parts.next().ok_or(missing_part())?;
+            let mut register = u8::from_str_radix(register_string, 16).map_err(map_parse_err)?;
+            for value in parts {
+                let compare_byte = u8::from_str_radix(value, 16).map_err(map_parse_err)?;
+                let data: [u8; 1] = [register];
+                let mut buffer: [u8; 1] = [0; 1];
+                if !dryrun {
+                    self.i2c.write_read(address >> 1, &data, &mut buffer)?;
+                }
+
+                let read = buffer[0];
+                if read != compare_byte {
+                    let error: Bq34Z100Error<E> = Bq34Z100Error::ChecksumError { register: register, expected: compare_byte, actual: read };
+                    return Err(error);
+                }
+                register += 1;
+            }
+        }
+        return Ok(());
+    }
+
     fn read_2_register_as_u16(&mut self, address: u8) -> Result<u16, Bq34Z100Error<E>> {
         let data: [u8; 1] = [address];
         let mut buffer: [u8; 2] = [0; 2];
@@ -146,7 +226,6 @@ where
         return Ok(());
     }
 
-    #[cfg(feature = "write")]
     fn write_reg(&mut self, address: u8, value: u8) -> Result<(), Bq34Z100Error<E>> {
         let data: [u8; 2] = [address, value];
         self.i2c.write(BQ34Z100_G1_ADDRESS, &data)?;
@@ -299,7 +378,7 @@ where
 
         if capacity != updated_q_max {
             return Err(Bq34Z100Error::NotStored {
-                error: "Qmax not updated"
+                error: "Qmax not updated",
             });
         }
         return Ok(());
@@ -340,14 +419,14 @@ where
 
         if energy != updated_energy {
             return Err(Bq34Z100Error::NotStored {
-                error: "Energy not updated"
+                error: "Energy not updated",
             });
         }
 
         let updated_energy_scale: u8 = self.flash_block_data[30];
         if updated_energy_scale != energy_scale {
             return Err(Bq34Z100Error::NotStored {
-                error: "Energy scale not updated"
+                error: "Energy scale not updated",
             });
         }
 
@@ -400,7 +479,7 @@ where
             || t3_t4 as u16 != updated_t3_t4
         {
             return Err(Bq34Z100Error::NotStored {
-                error: "Charge parameters not updated"
+                error: "Charge parameters not updated",
             });
         }
         return Ok(());
@@ -456,7 +535,7 @@ where
 
         if cells != self.flash_block_data[7] {
             return Err(Bq34Z100Error::NotStored {
-                error: "Series cells not updated"
+                error: "Series cells not updated",
             });
         }
         return Ok(());
@@ -491,7 +570,7 @@ where
         updated_config |= self.flash_block_data[1] as u16;
         if config != updated_config {
             return Err(Bq34Z100Error::NotStored {
-                error: "Config flags not updated"
+                error: "Config flags not updated",
             });
         }
         return Ok(());
@@ -782,8 +861,6 @@ where
         return Ok(());
     }
 
-
-
     fn ready(&mut self) -> Result<(), Bq34Z100Error<E>> {
         self.unsealed()?;
         self.it_enable()?;
@@ -1032,13 +1109,14 @@ pub struct Bq34z100g1Driver<I2C, Delay> {
     pub flash_block_data: [u8; 32],
 }
 pub trait Bq34z100g1<E> {
+    #[cfg(feature = "flashstream")]
+    fn write_flash_stream_i2c(&mut self, line: &str, dryrun: bool) -> Result<(), Bq34Z100Error<E>>;
     fn read_2_register_as_u16(&mut self, address: u8) -> Result<u16, Bq34Z100Error<E>>;
     fn read_1_register_as_u8(&mut self, address: u8) -> Result<u8, Bq34Z100Error<E>>;
     fn read_control(&mut self, address_lsb: u8, address_msb: u8) -> Result<u16, Bq34Z100Error<E>>;
+    fn write_reg(&mut self, address: u8, value: u8) -> Result<(), Bq34Z100Error<E>>;
     #[cfg(feature = "write")]
     fn read_flash_block(&mut self, sub_class: u8, offset: u8) -> Result<(), Bq34Z100Error<E>>;
-    #[cfg(feature = "write")]
-    fn write_reg(&mut self, address: u8, value: u8) -> Result<(), Bq34Z100Error<E>>;
     #[cfg(feature = "write")]
     fn write_flash_block(&mut self, sub_class: u8, offset: u8) -> Result<(), Bq34Z100Error<E>>;
     #[cfg(feature = "write")]

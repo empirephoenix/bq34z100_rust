@@ -1,11 +1,11 @@
 [package]
 name = "bq34z100"
 description = "Provides an embedded_hal driver for the fuel gauge series bq34z100"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 license = "BSD-3-Clause-No-Military-License"
 repository = "https://github.com/empirephoenix/bq34z100_rust"
-keywords = ["fuel", "gauge", "lithium", "battery", "embedded-hal-driver"]
+keywords = ["texas-instruments","fuel", "gauge", "battery", "embedded-hal-driver"]
 categories = ["embedded", "hardware-support"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 include = [
@@ -14,8 +14,11 @@ include = [
 ]
 
 [features]
+default = ["flashstream"]
 # requires std due to xemics float conversion, only activate this if you plan to write to the bq34 config registers. Recommend instead using a ev2400 programmer and bqstudio
 write = ["std"]
+# requires to use vec for now
+flashstream = ["std"]
 std = []
 
 [dependencies]
