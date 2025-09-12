@@ -1,7 +1,11 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 #![no_main]
 #[cfg(feature = "std")]
 extern crate std;
 
+use core::result::Result;
+use core::fmt;
 use embedded_hal::{delay::DelayNs, i2c::I2c};
 
 const BQ34Z100_G1_ADDRESS: u8 = 0x55;
@@ -115,7 +119,7 @@ impl<E> From<E> for Bq34Z100Error<E> {
     }
 }
 
-impl<I2C, DELAY, E: std::fmt::Debug> Bq34z100g1<E> for Bq34z100g1Driver<I2C, DELAY>
+impl<I2C, DELAY, E: core::fmt::Debug> Bq34z100g1<E> for Bq34z100g1Driver<I2C, DELAY>
 where
     I2C: I2c<Error = E>,
     DELAY: DelayNs,
@@ -174,12 +178,12 @@ where
                 let mut buffer: [u8; 1] = [0; 1];
                 if !dryrun {
                     self.i2c.write_read(address >> 1, &data, &mut buffer)?;
-                }
 
-                let read = buffer[0];
-                if read != compare_byte {
-                    let error: Bq34Z100Error<E> = Bq34Z100Error::ChecksumError { register: register, expected: compare_byte, actual: read };
-                    return Err(error);
+                    let read = buffer[0];
+                    if read != compare_byte {
+                        let error: Bq34Z100Error<E> = Bq34Z100Error::ChecksumError { register: register, expected: compare_byte, actual: read };
+                        return Err(error);
+                    }
                 }
                 register += 1;
             }
@@ -209,8 +213,10 @@ where
         return self.read_2_register_as_u16(0x00);
     }
 
-    fn internal_temperature(&mut self) -> Result<u16, Bq34Z100Error<E>> {
-        return self.read_2_register_as_u16(0x2a);
+    fn write_reg(&mut self, address: u8, value: u8) -> Result<(), Bq34Z100Error<E>> {
+        let data: [u8; 2] = [address, value];
+        self.i2c.write(BQ34Z100_G1_ADDRESS, &data)?;
+        return Ok(());
     }
 
     #[cfg(feature = "write")]
@@ -223,12 +229,6 @@ where
         self.i2c.write(BQ34Z100_G1_ADDRESS, &data)?;
         self.i2c
             .read(BQ34Z100_G1_ADDRESS, &mut self.flash_block_data)?;
-        return Ok(());
-    }
-
-    fn write_reg(&mut self, address: u8, value: u8) -> Result<(), Bq34Z100Error<E>> {
-        let data: [u8; 2] = [address, value];
-        self.i2c.write(BQ34Z100_G1_ADDRESS, &data)?;
         return Ok(());
     }
 
@@ -480,32 +480,6 @@ where
         {
             return Err(Bq34Z100Error::NotStored {
                 error: "Charge parameters not updated",
-            });
-        }
-        return Ok(());
-    }
-
-    #[cfg(feature = "write")]
-    //Warning, only for stock firmware, newer firmeware changed register
-    fn set_led_mode(&mut self, led_config: u8) -> Result<(), Bq34Z100Error<E>> {
-        self.unsealed()?;
-        self.read_flash_block(64, 0)?;
-        self.flash_block_data[4] = led_config;
-        self.write_reg(0x40 + 4, self.flash_block_data[4])?;
-
-        let checksum = self.flash_block_checksum()?;
-        self.write_reg(0x60, checksum)?;
-
-        self.delay.delay_ms(150);
-        self.reset()?;
-        self.delay.delay_ms(150);
-
-        self.unsealed()?;
-        self.read_flash_block(64, 0)?;
-
-        if self.flash_block_data[4] != led_config {
-            return Err(Bq34Z100Error::NotStored {
-                error: "Failed to set led config!",
             });
         }
         return Ok(());
@@ -932,10 +906,12 @@ where
     fn cal_enable(&mut self) -> Result<u16, Bq34Z100Error<E>> {
         return self.read_control(0x2d, 0x00);
     }
+
     #[cfg(feature = "write")]
     fn reset(&mut self) -> Result<u16, Bq34Z100Error<E>> {
         return self.read_control(0x41, 0x00);
     }
+
     #[cfg(feature = "write")]
     fn exit_cal(&mut self) -> Result<u16, Bq34Z100Error<E>> {
         return self.read_control(0x80, 0x00);
@@ -948,11 +924,9 @@ where
     fn offset_cal(&mut self) -> Result<u16, Bq34Z100Error<E>> {
         return self.read_control(0x82, 0x00);
     }
-
     fn state_of_charge(&mut self) -> Result<u8, Bq34Z100Error<E>> {
         return self.read_1_register_as_u8(0x02);
     }
-
     fn state_of_charge_max_error(&mut self) -> Result<u8, Bq34Z100Error<E>> {
         return self.read_1_register_as_u8(0x03);
     }
@@ -1017,6 +991,10 @@ where
         return self.read_2_register_as_u16(0x28);
     }
 
+    fn internal_temperature(&mut self) -> Result<u16, Bq34Z100Error<E>> {
+        return self.read_2_register_as_u16(0x2a);
+    }
+
     fn cycle_count(&mut self) -> Result<u16, Bq34Z100Error<E>> {
         return self.read_2_register_as_u16(0x2c);
     }
@@ -1079,6 +1057,32 @@ where
 
     fn q_max_time(&mut self) -> Result<u16, Bq34Z100Error<E>> {
         return self.read_2_register_as_u16(0x74);
+    }
+
+    #[cfg(feature = "write")]
+    //Warning, only for stock firmware, newer firmeware changed register
+    fn set_led_mode(&mut self, led_config: u8) -> Result<(), Bq34Z100Error<E>> {
+        self.unsealed()?;
+        self.read_flash_block(64, 0)?;
+        self.flash_block_data[4] = led_config;
+        self.write_reg(0x40 + 4, self.flash_block_data[4])?;
+
+        let checksum = self.flash_block_checksum()?;
+        self.write_reg(0x60, checksum)?;
+
+        self.delay.delay_ms(150);
+        self.reset()?;
+        self.delay.delay_ms(150);
+
+        self.unsealed()?;
+        self.read_flash_block(64, 0)?;
+
+        if self.flash_block_data[4] != led_config {
+            return Err(Bq34Z100Error::NotStored {
+                error: "Failed to set led config!",
+            });
+        }
+        return Ok(());
     }
 
     fn get_flags_decoded(&mut self) -> Result<Flags, Bq34Z100Error<E>> {
